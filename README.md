@@ -29,10 +29,13 @@
 
 ```
 穴位识别/YOLOV8/
+├── yolov8n-pose.pt               # YOLOv8 姿态估计模型 (~6.6MB)
 ├── backend/                     # Python 后端
 │   ├── main.py                 # FastAPI 入口
 │   ├── config.py               # 集中配置
 │   ├── requirements.txt        # Python 依赖
+│   ├── models/
+│   │   └── hand_landmarker.task # MediaPipe Hands 模型
 │   ├── modules/
 │   │   ├── pose_estimator.py   # YOLOv8-Pose + MediaPipe Hands
 │   │   ├── body_orientation.py # 人体朝向判断
@@ -56,8 +59,10 @@
 │       │   └── SensorPanel.tsx  # 传感器 Mock
 │       └── ...
 ├── data/
-│   └── acupoint_definitions/
-│       └── acupoints_v0.1.json # 穴位定义
+│   ├── acupoint_definitions/
+│   │   └── acupoints_v0.1.json # 穴位定义 (12 穴位)
+│   ├── corrections/            # 专家修正记录
+│   └── sessions/               # 会话数据
 └── README.md
 ```
 
@@ -76,7 +81,7 @@ source venv/bin/activate  # Linux/Mac
 # 安装依赖
 pip install -r requirements.txt
 
-# 启动后端 (首次运行会自动下载 YOLOv8n-pose 模型 ~4MB)
+# 启动后端 (YOLOv8n-pose 模型 ~6.6MB 已预置在项目根目录)
 python main.py
 ```
 
@@ -103,7 +108,7 @@ npm run dev
 3. 系统会自动：
    - 检测人体骨架
    - 判断朝向
-   - 显示 8 个 Demo 穴位
+   - 显示 12 个 Demo 穴位
    - 实时叠加显示
 4. 右侧面板可：
    - 输入患者参数（身高/体重/年龄/性别）
@@ -111,18 +116,22 @@ npm run dev
    - 查看传感器 Mock 数据
    - 对穴位进行专家修正
 
-## Demo 穴位列表 (v0.1)
+## Demo 穴位列表 (v0.2.0)
 
-| ID | 穴位 | 区域 | 朝向 |
-|----|------|------|------|
-| GB20 | 风池 | 颈部 | 背面 |
-| GB21 | 肩井 | 肩部 | 正面/背面 |
-| GV14 | 大椎 | 颈后 | 背面 |
-| LI4 | 合谷 | 手部 | 手掌/手背 |
-| PC8 | 劳宫 | 手掌 | 手掌 |
-| PC6 | 内关 | 前臂 | 正面 |
-| ST36 | 足三里 | 小腿 | 正面 |
-| SP6 | 三阴交 | 小腿 | 正面 |
+| ID | 穴位 | 区域 | 朝向 | 安全等级 |
+|----|------|------|------|----------|
+| EX-HN3 | 印堂 | 面部 (face) | 正面 | low |
+| EX-HN5 | 太阳 | 面部 (face) | 正面 | medium |
+| LI20 | 迎香 | 面部 (face) | 正面 | low |
+| ST2 | 四白 | 面部 (face) | 正面 | low |
+| GB20 | 风池 | 颈后 (neck) | 背面 | medium |
+| GV14 | 大椎 | 颈后 (neck) | 背面 | medium |
+| GB21 | 肩井 | 肩部 (shoulder) | 正面/背面 | high |
+| LI4 | 合谷 | 手部 (hand) | 手掌/手背 | low |
+| PC8 | 劳宫 | 手部 (hand) | 手掌 | low |
+| PC6 | 内关 | 前臂 (forearm) | 正面 | low |
+| ST36 | 足三里 | 小腿 (leg) | 正面 | low |
+| SP6 | 三阴交 | 小腿 (leg) | 正面 | medium |
 
 ## API 文档
 
@@ -132,7 +141,10 @@ npm run dev
 - `WS /ws/realtime` - 实时视频流 + 穴位推算
 - `GET/POST /api/patient/profile` - 患者参数
 - `GET /api/acupoints/definitions` - 穴位定义
-- `POST /api/expert/correction` - 专家修正
+- `POST /api/acupoints/definitions/reload` - 热加载穴位定义
+- `GET /api/expert/corrections` - 查询专家修正记录
+- `POST /api/expert/correction` - 保存专家修正
+- `GET /api/patient/correction-factors` - 患者参数修正因子
 - `GET /api/health` - 健康检查
 
 ## 关键设计说明
