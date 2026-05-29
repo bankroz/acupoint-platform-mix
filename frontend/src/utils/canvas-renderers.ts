@@ -161,8 +161,8 @@ export function drawMeridians(
   ctx.setLineDash([]);
 }
 
-/** 步骤 4 — 绘制穴位标注 */
-export function drawAcupoints(
+/** 步骤 4a — 绘制穴位几何（圆、线、修正点），用于镜像变换内 */
+export function drawAcupointGeometry(
   ctx: CanvasRenderingContext2D,
   acupoints: any[],
   width: number,
@@ -236,8 +236,24 @@ export function drawAcupoints(
       ctx.lineWidth = 2;
       ctx.stroke();
     }
+  }
+}
 
-    // 穴位名称标签
+/** 步骤 4b — 绘制穴位文本标签，在镜像变换外绘制以保持可读 */
+export function drawAcupointLabels(
+  ctx: CanvasRenderingContext2D,
+  acupoints: any[],
+  width: number,
+  height: number,
+  isOffline: boolean,
+) {
+  for (const acu of acupoints) {
+    if (!acu.visible || acu.x == null || acu.y == null) continue;
+
+    const ax = acu.x * width;
+    const ay = acu.y * height;
+    const radius = Math.max((acu.radius_px ?? 0.03) * width, 8);
+
     ctx.font = 'bold 13px sans-serif';
     const suffix = isOffline ? ' (缓存)' : '';
     const label = `${acu.name_cn}(${acu.id}) ${Math.round(acu.confidence * 100)}%${suffix}`;
@@ -255,6 +271,18 @@ export function drawAcupoints(
     ctx.fillStyle = labelColor;
     ctx.fillText(label, labelX, labelY);
   }
+}
+
+/** @deprecated 使用 drawAcupointGeometry + drawAcupointLabels 替代 */
+export function drawAcupoints(
+  ctx: CanvasRenderingContext2D,
+  acupoints: any[],
+  width: number,
+  height: number,
+  isOffline: boolean,
+) {
+  drawAcupointGeometry(ctx, acupoints, width, height, isOffline);
+  drawAcupointLabels(ctx, acupoints, width, height, isOffline);
 }
 
 /** 步骤 5 — 绘制朝向标签 */

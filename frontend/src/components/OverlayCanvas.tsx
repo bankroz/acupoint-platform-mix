@@ -13,7 +13,8 @@ import {
   drawSkeleton,
   drawHandKeypoints,
   drawMeridians,
-  drawAcupoints,
+  drawAcupointGeometry,
+  drawAcupointLabels,
   drawOrientationLabels,
   drawStatusOverlay,
 } from '../utils/canvas-renderers';
@@ -47,8 +48,9 @@ export const OverlayCanvas: React.FC<Props> = ({ result, width, height, isOfflin
     // 3. 经络线
     drawMeridians(ctx, result.pose.body_keypoints, width, height);
 
-    // 4. 穴位标注
-    drawAcupoints(ctx, result.acupoint_result.acupoints, width, height, isOffline);
+    // 4. 穴位几何（圆、线、修正点）+ 文本标签
+    drawAcupointGeometry(ctx, result.acupoint_result.acupoints, width, height, isOffline);
+    drawAcupointLabels(ctx, result.acupoint_result.acupoints, width, height, isOffline);
 
     // 5. 朝向标签
     drawOrientationLabels(
@@ -70,7 +72,7 @@ export const OverlayCanvas: React.FC<Props> = ({ result, width, height, isOfflin
       width={width}
       height={height}
       className="absolute top-0 left-0 pointer-events-none"
-      style={{ zIndex: 10 }}
+      style={{ zIndex: 10, width: '100%', height: '100%' }}
     />
   );
 };

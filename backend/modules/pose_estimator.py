@@ -193,11 +193,8 @@ class PoseEstimator:
                     for hand_landmarks, handedness in zip(mp_result.hand_landmarks, mp_result.handedness):
                         # 判断左右手
                         hand_label = handedness[0].category_name  # "Left" or "Right"
-                        # MediaPipe 的 "Left" 是摄像头看到的左手 = 实际右手
-                        if hand_label == "Left":
-                            hand_id = "right_hand"
-                        else:
-                            hand_id = "left_hand"
+                        # MediaPipe "Left" = 解剖学左手(用户的左手), "Right" = 解剖学右手(用户的右手)
+                        hand_id = "left_hand" if hand_label == "Left" else "right_hand"
 
                         landmarks = []
                         for i, lm in enumerate(hand_landmarks):

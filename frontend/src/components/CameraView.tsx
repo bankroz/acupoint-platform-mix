@@ -39,18 +39,25 @@ export const CameraView: React.FC = () => {
     return () => clearInterval(interval);
   }, [active, wsConnected, pendingFrame, captureFrame]);
 
-  // 监听视频尺寸变化
+  // 监听视频显示尺寸变化（用 ResizeObserver 跟踪实际 CSS 尺寸，确保 Canvas 与视频对齐）
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const updateSize = () => {
-      setVideoSize({
-        w: video.videoWidth || 640,
-        h: video.videoHeight || 480,
+
+    const setDisplaySize = () => {
+      requestAnimationFrame(() => {
+        setVideoSize({
+          w: video.offsetWidth || video.videoWidth || 640,
+          h: video.offsetHeight || video.videoHeight || 480,
+        });
       });
     };
-    video.addEventListener('loadedmetadata', updateSize);
-    return () => video.removeEventListener('loadedmetadata', updateSize);
+
+    setDisplaySize();
+
+    const observer = new ResizeObserver(() => setDisplaySize());
+    observer.observe(video);
+    return () => observer.disconnect();
   }, [videoRef, active]);
 
   // 用于 OverlayCanvas 的数据：在线用实时结果，离线用缓存
