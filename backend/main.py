@@ -12,6 +12,7 @@ import os
 import time
 import uvicorn
 from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 
 from config import HOST, PORT, CORS_ORIGINS
 from schemas.models import (
@@ -69,7 +70,7 @@ async def health_check():
     # 检查 YOLO 模型
     try:
         from modules.pose_estimator import pose_engine
-        health["checks"]["yolo_ready"] = pose_engine._yolo is not None
+        health["checks"]["yolo_ready"] = pose_engine._yolo_model is not None
     except Exception as e:
         health["checks"]["yolo_ready"] = False
         health["checks"]["yolo_error"] = str(e)
