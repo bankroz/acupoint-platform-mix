@@ -4,10 +4,10 @@ import { PatientPanel } from './components/PatientPanel';
 import { ExpertPanel } from './components/ExpertPanel';
 import { PrescriptionPanel } from './components/PrescriptionPanel';
 import { SensorPanel } from './components/SensorPanel';
-import { useAppStore } from './store/appStore';
+import { useWsStore } from './store/wsStore';
 
 const App: React.FC = () => {
-  const latestResult = useAppStore((s) => s.latestResult);
+  const latestResult = useWsStore((s) => s.latestResult);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">

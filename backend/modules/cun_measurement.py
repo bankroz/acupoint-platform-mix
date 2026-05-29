@@ -10,13 +10,7 @@ from schemas.models import (
     PoseResult, BodyKeypoint, PatientProfile,
     CunEstimate, CunResult, HandLandmarks,
 )
-
-
-def _get_kp(result: PoseResult, name: str) -> Optional[BodyKeypoint]:
-    for kp in result.body_keypoints:
-        if kp.name == name:
-            return kp
-    return None
+from modules.utils import get_keypoint_by_name as _get_kp
 
 
 def _distance(kp_a: Optional[BodyKeypoint], kp_b: Optional[BodyKeypoint]) -> Optional[float]:

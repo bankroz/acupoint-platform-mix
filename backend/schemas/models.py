@@ -5,7 +5,7 @@ Pydantic 数据模型定义。
 from __future__ import annotations
 
 from typing import Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ============================================================
@@ -23,11 +23,13 @@ class PatientProfile(BaseModel):
     body_type: Literal["thin", "normal", "overweight", "obese"] = Field(default="normal", description="体型分类")
     notes: str = Field(default="", description="备注")
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        if self.bmi is None and self.height_cm > 0:
+    @model_validator(mode='after')
+    def compute_bmi_and_type(self) -> 'PatientProfile':
+        """Pydantic v2 标准 validator，替代 __init__ 覆写 (解耦-B6)"""
+        if self.bmi is None and self.height_cm > 0 and self.weight_kg > 0:
             height_m = self.height_cm / 100.0
             self.bmi = round(self.weight_kg / (height_m ** 2), 1)
+        if self.bmi is not None:
             if self.bmi < 18.5:
                 self.body_type = "thin"
             elif self.bmi < 25:
@@ -36,6 +38,7 @@ class PatientProfile(BaseModel):
                 self.body_type = "overweight"
             else:
                 self.body_type = "obese"
+        return self
 
 
 # ============================================================

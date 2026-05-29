@@ -1,12 +1,12 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { wsSendPatientUpdate } from '../store/wsStore';
 import type { PatientProfile } from '../types';
 
 export const PatientPanel: React.FC = () => {
   const patient = useAppStore((s) => s.patient);
   const setPatient = useAppStore((s) => s.setPatient);
-  const { sendPatientUpdate } = useWebSocket();
+  // wsSendPatientUpdate 直接导入，无需 hook
 
   const handleChange = (field: keyof PatientProfile, value: string | number) => {
     const updated = { ...patient, [field]: value };
@@ -24,7 +24,7 @@ export const PatientPanel: React.FC = () => {
       }
     }
     setPatient(updated);
-    sendPatientUpdate(updated);
+    wsSendPatientUpdate(updated);
   };
 
   return (

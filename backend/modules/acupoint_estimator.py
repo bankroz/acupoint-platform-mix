@@ -18,14 +18,7 @@ from schemas.models import (
 from modules.body_orientation import judge_body_orientation
 from modules.cun_measurement import estimate_cun
 from modules.hand_orientation import judge_hand_orientation
-
-
-def _get_kp(result: PoseResult, name: str) -> Optional[BodyKeypoint]:
-    """获取身体关键点"""
-    for kp in result.body_keypoints:
-        if kp.name == name:
-            return kp
-    return None
+from modules.utils import get_keypoint_by_name as _get_kp
 
 
 def _get_hand_lm(hand, name: str):

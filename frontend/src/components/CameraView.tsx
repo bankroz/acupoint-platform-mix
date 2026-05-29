@@ -1,41 +1,43 @@
 import React, { useEffect, useCallback } from 'react';
 import { useCamera } from '../hooks/useCamera';
-import { useWebSocket } from '../hooks/useWebSocket';
-import { useAppStore } from '../store/appStore';
+import { useWsStore, wsConnect, wsDisconnect, wsSendFrame } from '../store/wsStore';
 import { OverlayCanvas } from './OverlayCanvas';
 
 export const CameraView: React.FC = () => {
   const { videoRef, active, error, start, stop, captureFrame } = useCamera();
-  const { connect, disconnect, sendFrame } = useWebSocket();
-  const latestResult = useAppStore((s) => s.latestResult);
-  const wsConnected = useAppStore((s) => s.wsConnected);
-  const setCameraActive = useAppStore((s) => s.setCameraActive);
+  const latestResult = useWsStore((s) => s.latestResult);
+  const wsConnected = useWsStore((s) => s.wsConnected);
+  const pendingFrame = useWsStore((s) => s.pendingFrame);
+  const lastCachedResult = useWsStore((s) => s.lastCachedResult);
 
   const [videoSize, setVideoSize] = React.useState({ w: 640, h: 480 });
 
   const handleStart = useCallback(() => {
     start();
-    connect();
-    setCameraActive(true);
-  }, [start, connect, setCameraActive]);
+    wsConnect();
+  }, [start]);
 
   const handleStop = useCallback(() => {
     stop();
-    disconnect();
-    setCameraActive(false);
-  }, [stop, disconnect, setCameraActive]);
+    wsDisconnect();
+  }, [stop]);
 
-  // 帧发送循环
+  // 帧发送循环 — 背压控制 (B2)
   useEffect(() => {
     if (!active || !wsConnected) return;
+
     const interval = setInterval(() => {
+      // 背压：只有在无 pending 帧时才捕获和发送
+      if (pendingFrame) return;
+
       const frame = captureFrame();
       if (frame) {
-        sendFrame(frame);
+        wsSendFrame(frame);
       }
-    }, 150); // 约 6-7 fps
+    }, 150); // 约 6-7 fps，与 FRAME_INTERVAL_MS 对齐
+
     return () => clearInterval(interval);
-  }, [active, wsConnected, captureFrame, sendFrame]);
+  }, [active, wsConnected, pendingFrame, captureFrame]);
 
   // 监听视频尺寸变化
   useEffect(() => {
@@ -50,6 +52,9 @@ export const CameraView: React.FC = () => {
     video.addEventListener('loadedmetadata', updateSize);
     return () => video.removeEventListener('loadedmetadata', updateSize);
   }, [videoRef, active]);
+
+  // 用于 OverlayCanvas 的数据：在线用实时结果，离线用缓存
+  const displayResult = wsConnected ? latestResult : lastCachedResult;
 
   return (
     <div className="relative bg-black rounded-lg overflow-hidden" style={{ minHeight: 400 }}>
@@ -76,8 +81,20 @@ export const CameraView: React.FC = () => {
 
       {active && (
         <div className="absolute top-2 right-2 z-20 flex gap-2">
-          <span className={`px-2 py-0.5 rounded text-xs text-white ${wsConnected ? 'bg-green-600' : 'bg-red-600'}`}>
+          <span className={`px-2 py-0.5 rounded text-xs text-white ${
+            wsConnected ? 'bg-green-600' : 'bg-red-600'
+          }`}>
             {wsConnected ? 'WS 已连接' : 'WS 断开'}
+          </span>
+          {!wsConnected && (
+            <span className="px-2 py-0.5 rounded text-xs bg-yellow-600 text-white">
+              重连中...
+            </span>
+          )}
+          <span className={`px-2 py-0.5 rounded text-xs ${
+            pendingFrame ? 'bg-yellow-600' : 'bg-gray-600'
+          } text-white`}>
+            {pendingFrame ? '处理中' : '空闲'}
           </span>
           <button
             onClick={handleStop}
@@ -89,9 +106,10 @@ export const CameraView: React.FC = () => {
       )}
 
       <OverlayCanvas
-        result={latestResult}
+        result={displayResult}
         width={videoSize.w || 640}
         height={videoSize.h || 480}
+        isOffline={!wsConnected}
       />
     </div>
   );

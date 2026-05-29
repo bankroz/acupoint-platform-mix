@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWsStore, wsSendExpertCorrection } from '../store/wsStore';
 import type { AcupointEstimate } from '../types';
 
 const CORRECTION_REASONS = [
@@ -9,10 +9,19 @@ const CORRECTION_REASONS = [
   '专家经验判断', '穴位定义文件错误', '图像遮挡', '其他',
 ];
 
+/** 生成简单 UUID v4 (R4: 客户端唯一修正 ID) */
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 export const ExpertPanel: React.FC = () => {
   const result = useAppStore((s) => s.latestResult);
   const patient = useAppStore((s) => s.patient);
-  const { sendExpertCorrection } = useWebSocket();
+  const wsConnected = useWsStore((s) => s.wsConnected);
 
   const [selectedAcu, setSelectedAcu] = useState<string | null>(null);
   const [dragX, setDragX] = useState<number>(0);
@@ -20,6 +29,7 @@ export const ExpertPanel: React.FC = () => {
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
+  const [submitting, setSubmitting] = useState(false);  // R4: 防重复提交
 
   const acupoints = result?.acupoint_result?.acupoints || [];
   const current = acupoints.find((a) => a.id === selectedAcu);
@@ -33,16 +43,21 @@ export const ExpertPanel: React.FC = () => {
     setStatusMsg('');
   };
 
-  const handleSubmitCorrection = () => {
-    if (!selectedAcu || !current) return;
+  const handleSubmitCorrection = useCallback(async () => {
+    if (!selectedAcu || !current || submitting) return;
+
+    const correctionId = generateUUID();  // R4: 客户端唯一 ID
 
     const correction = {
+      correction_id: correctionId,
       patient_id: patient.patient_id,
       frame_id: result?.acupoint_result?.frame_id || '',
       acupoint_id: selectedAcu,
       ai_position: { x: current.x, y: current.y, z: null },
       corrected_position: { x: dragX, y: dragY, z: null },
-      correction_distance_px: current.x ? Math.sqrt((dragX - current.x) ** 2 + (dragY - (current.y || 0)) ** 2) * 640 : 0,
+      correction_distance_px: current.x
+        ? Math.sqrt((dragX - current.x) ** 2 + (dragY - (current.y || 0)) ** 2) * 640
+        : 0,
       correction_reasons: reason ? [reason] : [],
       expert_confidence: 0.9,
       notes: notes,
@@ -50,10 +65,30 @@ export const ExpertPanel: React.FC = () => {
       acupoint_definition_version: '0.1.0',
     };
 
-    sendExpertCorrection(correction);
-    setStatusMsg(`穴位 ${selectedAcu} 已提交修正`);
-    setTimeout(() => setStatusMsg(''), 3000);
-  };
+    setSubmitting(true);
+    setStatusMsg('提交中...');
+
+    try {
+      if (wsConnected) {
+        // 主通道：WebSocket
+        wsSendExpertCorrection(correction);
+      } else {
+        // R2: 降级通道：REST API
+        const resp = await fetch('/api/expert/correction', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(correction),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      }
+      setStatusMsg(`穴位 ${selectedAcu} 已提交修正`);
+    } catch (err: any) {
+      setStatusMsg(`提交失败: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+      setTimeout(() => setStatusMsg(''), 3000);
+    }
+  }, [selectedAcu, current, submitting, patient.patient_id, result, dragX, dragY, reason, notes, wsConnected]);
 
   return (
     <div className="bg-gray-800 rounded-lg p-4">
@@ -145,9 +180,14 @@ export const ExpertPanel: React.FC = () => {
 
           <button
             onClick={handleSubmitCorrection}
-            className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition text-sm"
+            disabled={submitting}
+            className={`w-full py-2 rounded transition text-sm ${
+              submitting
+                ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
-            提交修正
+            {submitting ? '提交中...' : '提交修正'}
           </button>
 
           {statusMsg && (

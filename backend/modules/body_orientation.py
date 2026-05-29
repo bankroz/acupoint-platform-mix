@@ -8,14 +8,7 @@ from config import FRONT_NOSE_CONFIDENCE_MIN, SIDE_SHOULDER_RATIO_MAX
 from schemas.models import (
     PoseResult, BodyOrientation, BodyKeypoint
 )
-
-
-def _get_kp(result: PoseResult, name: str) -> Optional[BodyKeypoint]:
-    """快捷获取关键点"""
-    for kp in result.body_keypoints:
-        if kp.name == name:
-            return kp
-    return None
+from modules.utils import get_keypoint_by_name as _get_kp
 
 
 def judge_body_orientation(result: PoseResult) -> BodyOrientation:
