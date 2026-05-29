@@ -1,0 +1,66 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+*.egg
+.eggs/
+*.so
+
+# --- Virtual Environment ---
+backend/venv/
+venv/
+env/
+.env
+
+# --- Node ---
+frontend/node_modules/
+node_modules/
+.pnp/
+.pnp.js
+
+# --- Build Outputs ---
+dist/
+build/
+.next/
+out/
+
+# --- IDE & Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- WorkBuddy Internal ---
+.workbuddy/
+
+# --- Large Model Files ---
+# Core model files are tracked; other large binary models are ignored
+*.onnx
+*.h5
+*.pb
+*.tflite
+# Include required YOLO and MediaPipe models
+!yolov8n-pose.pt
+!*.task
+!backend/models/*.pt
+!backend/models/*.task
+
+# --- Runtime Data ---
+sessions/
+corrections/
+
+# --- OS Files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Environment ---
+.env.local
+.env.*.local
+
+# --- Logs ---
+*.log
+logs/

@@ -1,0 +1,353 @@
+{
+  "version": "0.2.0",
+  "source": "rule_based_definition",
+  "coordinate_system": "relative_body_landmark",
+  "description": "MVP 演示穴位定义 — 优先面部+手部。基于 YOLOv8-Pose (COCO 17关键点) + MediaPipe Hands (21手部关键点)。支持仅面部/手部（partial_front 模式）。",
+  "acupoints": [
+    {
+      "id": "EX-HN3",
+      "name_cn": "印堂",
+      "name_en": "Yintang",
+      "meridian": "Extra Point (Head & Neck)",
+      "body_side": "center",
+      "visible_orientations": [],
+      "body_orientations": ["front", "partial_front"],
+      "region": "face",
+      "definition_method": "relative_landmark",
+      "landmark_rules": [
+        {
+          "type": "between_landmarks",
+          "landmark_a": "left_eye",
+          "landmark_b": "right_eye",
+          "ratio": 0.5,
+          "description": "印堂位于两眉之间，眉心正中央"
+        },
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "nose",
+          "direction": "up",
+          "cun_distance": 1.0,
+          "description": "鼻根上方约1寸"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["nose", "left_eye", "right_eye"],
+      "default_radius_mm": 5,
+      "safety_level": "low",
+      "requires_expert_confirm": true,
+      "contraindications": ["局部皮肤感染"]
+    },
+    {
+      "id": "EX-HN5",
+      "name_cn": "太阳",
+      "name_en": "Taiyang",
+      "meridian": "Extra Point (Head & Neck)",
+      "body_side": "left_and_right",
+      "visible_orientations": [],
+      "body_orientations": ["front", "partial_front"],
+      "region": "face",
+      "definition_method": "relative_landmark",
+      "landmark_rules": [
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "left_eye",
+          "direction": "left",
+          "cun_distance": 2.0,
+          "description": "太阳穴在眉梢与外眼角之间，向后约一横指凹陷处"
+        },
+        {
+          "type": "between_landmarks",
+          "landmark_a": "left_eye",
+          "landmark_b": "left_ear",
+          "ratio": 0.5,
+          "description": "太阳穴位于眼耳连线中点"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["left_eye", "left_ear"],
+      "default_radius_mm": 8,
+      "safety_level": "medium",
+      "requires_expert_confirm": true,
+      "contraindications": ["深刺可能伤及颞浅动脉"]
+    },
+    {
+      "id": "LI20",
+      "name_cn": "迎香",
+      "name_en": "Yingxiang",
+      "meridian": "Large Intestine Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": [],
+      "body_orientations": ["front", "partial_front"],
+      "region": "face",
+      "definition_method": "relative_landmark",
+      "landmark_rules": [
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "nose",
+          "direction": "down",
+          "cun_distance": 0.5,
+          "description": "迎香位于鼻翼外缘中点旁，鼻唇沟中"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["nose"],
+      "default_radius_mm": 5,
+      "safety_level": "low",
+      "requires_expert_confirm": true,
+      "contraindications": []
+    },
+    {
+      "id": "ST2",
+      "name_cn": "四白",
+      "name_en": "Sibai",
+      "meridian": "Stomach Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": [],
+      "body_orientations": ["front", "partial_front"],
+      "region": "face",
+      "definition_method": "relative_landmark",
+      "landmark_rules": [
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "left_eye",
+          "direction": "down",
+          "cun_distance": 1.0,
+          "description": "四白位于眶下孔凹陷处，目正视瞳孔直下约1寸"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["left_eye"],
+      "default_radius_mm": 5,
+      "safety_level": "low",
+      "requires_expert_confirm": true,
+      "contraindications": []
+    },
+    {
+      "id": "GB20",
+      "name_cn": "风池",
+      "name_en": "Fengchi",
+      "meridian": "Gallbladder Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": [],
+      "body_orientations": ["back"],
+      "region": "neck",
+      "definition_method": "relative_landmark",
+      "landmark_rules": [
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "nose",
+          "direction": "up",
+          "cun_distance": 2.0,
+          "description": "风池位于项部，枕骨之下，胸锁乳突肌与斜方肌上端之间凹陷处"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["nose", "left_ear", "right_ear", "left_shoulder", "right_shoulder"],
+      "default_radius_mm": 15,
+      "safety_level": "medium",
+      "requires_expert_confirm": true,
+      "contraindications": ["深刺有伤及延髓风险"]
+    },
+    {
+      "id": "GV14",
+      "name_cn": "大椎",
+      "name_en": "Dazhui",
+      "meridian": "Governor Vessel",
+      "body_side": "center",
+      "visible_orientations": [],
+      "body_orientations": ["back"],
+      "region": "neck",
+      "definition_method": "relative_landmark",
+      "landmark_rules": [
+        {
+          "type": "between_landmarks",
+          "landmark_a": "left_shoulder",
+          "landmark_b": "right_shoulder",
+          "ratio": 0.5,
+          "description": "大椎位于第七颈椎棘突下，两肩峰连线中点"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["left_shoulder", "right_shoulder"],
+      "default_radius_mm": 15,
+      "safety_level": "medium",
+      "requires_expert_confirm": true,
+      "contraindications": ["孕妇慎用"]
+    },
+    {
+      "id": "GB21",
+      "name_cn": "肩井",
+      "name_en": "Jianjing",
+      "meridian": "Gallbladder Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": [],
+      "body_orientations": ["front", "back"],
+      "region": "shoulder",
+      "definition_method": "relative_landmark",
+      "landmark_rules": [
+        {
+          "type": "between_landmarks",
+          "landmark_a": "nose",
+          "landmark_b": "left_shoulder",
+          "ratio": 0.75,
+          "description": "肩井位于大椎与肩峰连线的中点"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["nose", "left_shoulder", "right_shoulder"],
+      "default_radius_mm": 20,
+      "safety_level": "high",
+      "requires_expert_confirm": true,
+      "contraindications": ["孕妇禁用", "深刺可伤肺尖"]
+    },
+    {
+      "id": "PC6",
+      "name_cn": "内关",
+      "name_en": "Neiguan",
+      "meridian": "Pericardium Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": ["palm"],
+      "body_orientations": ["front", "partial_front"],
+      "region": "forearm",
+      "definition_method": "cun_from_landmark",
+      "landmark_rules": [
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "left_wrist",
+          "direction": "up",
+          "cun_distance": 2.0,
+          "description": "内关位于前臂掌侧，腕横纹上2寸"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["left_wrist", "left_elbow"],
+      "default_radius_mm": 10,
+      "safety_level": "low",
+      "requires_expert_confirm": false,
+      "contraindications": []
+    },
+    {
+      "id": "ST36",
+      "name_cn": "足三里",
+      "name_en": "Zusanli",
+      "meridian": "Stomach Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": [],
+      "body_orientations": ["front"],
+      "region": "leg",
+      "definition_method": "cun_from_landmark",
+      "landmark_rules": [
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "left_knee",
+          "direction": "down",
+          "cun_distance": 3.0,
+          "description": "足三里位于小腿外侧，犊鼻下3寸"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["left_knee", "left_ankle"],
+      "default_radius_mm": 15,
+      "safety_level": "low",
+      "requires_expert_confirm": false,
+      "contraindications": []
+    },
+    {
+      "id": "SP6",
+      "name_cn": "三阴交",
+      "name_en": "Sanyinjiao",
+      "meridian": "Spleen Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": [],
+      "body_orientations": ["front"],
+      "region": "leg",
+      "definition_method": "cun_from_landmark",
+      "landmark_rules": [
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "left_ankle",
+          "direction": "up",
+          "cun_distance": 3.0,
+          "description": "三阴交位于小腿内侧，内踝尖上3寸"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": false,
+      "requires_body_keypoints": ["left_ankle", "left_knee"],
+      "default_radius_mm": 12,
+      "safety_level": "medium",
+      "requires_expert_confirm": true,
+      "contraindications": ["孕妇禁用"]
+    },
+    {
+      "id": "LI4",
+      "name_cn": "合谷",
+      "name_en": "Hegu",
+      "meridian": "Large Intestine Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": ["palm", "back_of_hand"],
+      "body_orientations": ["front", "partial_front"],
+      "region": "hand",
+      "definition_method": "relative_hand_landmark",
+      "landmark_rules": [
+        {
+          "type": "between_landmarks",
+          "landmark_a": "hand_thumb_mcp",
+          "landmark_b": "hand_index_mcp",
+          "ratio": 0.5,
+          "description": "合谷位于手背，第一、二掌骨之间，约平第二掌骨中点"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": true,
+      "requires_body_keypoints": [],
+      "default_radius_mm": 10,
+      "safety_level": "low",
+      "requires_expert_confirm": true,
+      "contraindications": ["孕妇慎用"]
+    },
+    {
+      "id": "PC8",
+      "name_cn": "劳宫",
+      "name_en": "Laogong",
+      "meridian": "Pericardium Meridian",
+      "body_side": "left_and_right",
+      "visible_orientations": ["palm"],
+      "body_orientations": ["front", "partial_front"],
+      "region": "hand",
+      "definition_method": "relative_hand_landmark",
+      "landmark_rules": [
+        {
+          "type": "between_landmarks",
+          "landmark_a": "hand_index_mcp",
+          "landmark_b": "hand_pinky_mcp",
+          "ratio": 0.5,
+          "description": "劳宫位于手掌心，第二、三掌骨之间偏第三掌骨"
+        },
+        {
+          "type": "offset_from_landmark",
+          "reference_landmark": "hand_middle_mcp",
+          "direction": "down",
+          "cun_distance": 1.0,
+          "description": "劳宫在掌中央"
+        }
+      ],
+      "cun_rules": [],
+      "requires_hand_keypoints": true,
+      "requires_body_keypoints": [],
+      "default_radius_mm": 10,
+      "safety_level": "low",
+      "requires_expert_confirm": true,
+      "contraindications": ["局部有感染时禁针"]
+    }
+  ]
+}
