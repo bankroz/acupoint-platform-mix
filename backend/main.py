@@ -27,7 +27,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,  # 从 config.py 读取白名单；["*"] + allow_credentials=True 会被浏览器拒绝
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

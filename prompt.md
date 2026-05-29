@@ -1442,3 +1442,515 @@ README.md
 3. React 页面草图
 4. acupoints_v0.1.json 示例文件
 5. MediaPipe 姿态估计 Demo
+
+
+# 十三、补充规范（审计盲区 B1~B17）
+
+> 以下 17 条规范来自 `project-audit-report.md` 审计结果，按优先级 P0 > P1 > P2 排列。
+> 每条包含「问题描述 → 规范要求 → 实现方式 → 验收标准」。
+
+---
+
+## B1 · 会话并发隔离（P0）
+
+**问题**：当前 `ws/handler.py` 使用全局变量 `_current_patient`、`_current_definitions`、`_expert_corrections` 管理会话状态。当多个 WebSocket 连接同时存在时（多页面、多人），全局状态会被覆盖，导致患者 A 看到患者 B 的数据。
+
+**规范要求**：
+- 每个 WebSocket 连接必须拥有独立的会话上下文（Session Context）
+- 一个连接的生命周期 = 一次完整的穴位识别会话
+- 会话上下文包括：`patient`、`definitions`、`corrections`、`processing_state`
+- 连接断开时，会话上下文必须在合理时间内（默认 300s）被 GC
+
+**实现方式**：
+- 新建 `backend/services/session_service.py`，实现 `SessionContext` 数据类
+- `ws_handler` 为每个 `websocket` 创建独立的 `SessionContext` 实例
+- REST API 通过 `session_id` 参数访问指定会话的数据
+- 提供 `session_id → SessionContext` 的弱引用映射，支持超时自动清理
+
+**验收标准**：
+- 两个浏览器 Tab 连接同一 ws 端点，各自发送不同 patient 参数，互不干扰
+- 一个连接断开后，该会话在 300s 内被从内存中移除
+
+---
+
+## B2 · 帧背压控制规范（P0）
+
+**问题**：前端 `setInterval` 每 150ms 无脑发帧，后端没有任何流量控制。当后端处理速度跟不上时，帧队列堆积导致内存溢出和延迟雪崩。
+
+**规范要求**：
+- 前端：上一帧的 `result` 回执未到达前，禁止发送下一帧
+- 后端：当 `is_processing == True` 时，收到的帧直接丢弃并回复 `{type: "skip"}`
+- 帧间间隔下限：150ms（即使处理速度更快也不加速）
+- 帧超时：单帧处理超过 1000ms 时主动丢弃并回复 `{type: "timeout"}`
+
+**实现方式**：
+- 前端维护 `pendingFrame: boolean` 锁
+  - `sendFrame` 发送前 `assert(!pendingFrame)`，发送后设 `true`
+  - 收到 `result` / `skip` / `timeout` 消息时，将 `pendingFrame` 设回 `false`
+- 后端 `_process_frame` 入口加 `is_processing` 标志保护
+  - 处理开始设 `True`，处理结束/异常/超时设 `False`
+  - 超时使用 `asyncio.wait_for(process, timeout=1.0)`
+
+**验收标准**：
+- 慢 CPU 环境下不出现内存持续增长
+- 前端控制台无连续 3 帧以上 "skip" 日志
+- 帧间间隔稳定在 150~160ms（见 B16 性能基线）
+
+---
+
+## B3 · 数据隐私规范（P0）
+
+**问题**：当前患者身体参数（身高、体重）和摄像头画面都通过 WebSocket 明文传输，无任何脱敏或访问控制。
+
+**规范要求**：
+- **MVP/内网阶段**：至少确认所有数据在本地链路传输，不上传云端
+- 患者 `face_landmarks` 不在服务端持久化存储
+- 摄像头画面帧不得写入磁盘（仅在内存中处理）
+- 患者数据导出功能必须带有「匿名化」开关，去除 `patient_id`、`face_landmarks`
+
+**实现方式**：
+- `config.py` 增加 `DATA_RETENTION_POLICY` 配置块：
+  ```python
+  STORE_FRAMES_TO_DISK = False       # 帧不落盘
+  STRIP_FACE_LANDMARKS = True        # 导出时剥离面部特征点
+  KEEP_PATIENT_ID_IN_EXPORT = False  # 导出时移除患者 ID
+  ```
+- 所有 `cv2.imwrite` / `open(..., "wb")` 写帧操作在正式模式禁止
+
+**验收标准**：
+- `backend/` 目录下及 `/tmp/` 下无 `.jpg`/`.png` 帧文件残留
+- 导出 JSON 中不含 `face_landmarks` 字段
+
+---
+
+## B4 · 启动失败降级（P0）
+
+**问题**：当前启动流程无显式错误处理——YOLO 模型加载失败、acupoints 文件缺失、MediaPipe 初始化失败都会导致静默崩溃或 500。
+
+**规范要求**：
+- 启动时**必须**显式检查三项核心依赖：
+  - `yolo_model`：YOLO 模型加载成功
+  - `mediapipe_hands`：MediaPipe Hands 初始化成功
+  - `acupoint_definitions`：穴位定义 JSON 解析成功
+- 任何一项失败 → 服务以 "degraded" 模式启动，`/api/health` 返回具体失败原因
+- YOLO 模型失败时，WebSocket `/ws/realtime` 端点返回 error message 而非静默断连
+- 所有关键错误必须写入结构化日志（JSON 格式），包含时间戳、错误类型、堆栈
+
+**实现方式**：
+- 新增 `modules/startup_health.py`：
+  ```python
+  async def check_yolo_ready() -> bool: ...
+  async def check_mediapipe_ready() -> bool: ...
+  async def check_definitions_loaded() -> bool: ...
+  async def deep_health_check() -> dict: ...
+  ```
+- `health_check()` 端点返回深度检查结果：
+  ```json
+  {
+    "status": "degraded",
+    "yolo_ready": true,
+    "mediapipe_ready": true,
+    "definitions_loaded": false,
+    "definitions_error": "FileNotFoundError: ...",
+    "uptime_seconds": 120
+  }
+  ```
+
+**验收标准**：
+- 删除 `acupoints_v0.1.json` 后启动，`/api/health` 返回 `definitions_loaded: false`
+- 服务不崩溃，WebSocket 连接建立但返回错误提示
+
+---
+
+## B5 · 专家权限控制（P1）
+
+**问题**：当前任何人建立 WebSocket 连接后都可以发送 `expert_correction` 消息，无任何身份验证。
+
+**规范要求**：
+- MVP/内网阶段：前端设置 `X-Expert-Token` header 或 URL query parameter
+- 后端校验 token，非专家用户发送的 `expert_correction` 消息返回 403 并记录日志
+- token 从 `config.py` 的 `EXPERT_TOKENS` 列表读取
+- 生产环境切换为 JWT 或 OAuth2
+
+**实现方式**：
+- `config.py` 增加：
+  ```python
+  EXPERT_TOKENS = ["dev-expert-token"]  # 内网测试用
+  ```
+- `ws/handler.py` 解析 `X-Expert-Token` query parameter
+- 对 `expert_correction` 消息校验 token，不匹配返回 `{type: "error", code: 403, detail: "permission denied"}`
+
+**验收标准**：
+- 不带 token 的 WebSocket 发送 `expert_correction` 收到 403
+- 带正确 token 的 WebSocket 发送 `expert_correction` 正常处理
+
+---
+
+## B6 · 处方版本化（P1）
+
+**问题**：`acupoints_v0.1.json` 热加载后，之前基于旧定义生成的修正记录 (`correction_store`) 与新定义可能语义不兼容（穴位被删除、坐标锚点变化）。
+
+**规范要求**：
+- `acupoints_v0.1.json` 文件顶部增加 `version` 字段（如 `"version": "0.1.0"`）
+- `correction_store` 中每条记录关联 `definition_version`
+- 热加载后自动检测版本变更：
+  - 小版本（patch）更新：旧修正继续有效
+  - 中版本（minor）更新：标记旧修正为 "needs_review"
+  - 大版本（major）更新：清空所有旧修正，备份到 `corrections_v{N}.json`
+
+**实现方式**：
+- `AcupointDefinitions` Pydantic model 增加 `version: str` 字段
+- `CorrectionRecord` 增加 `definition_version: Optional[str]`
+- `reload_definitions()` 比较新旧版本号，按 SemVer 规则执行清理策略
+
+**验收标准**：
+- 热加载 `v0.1.0` → `v0.1.1`：旧修正保留
+- 热加载 `v0.1.0` → `v0.2.0`：旧修正标记 `needs_review`
+- 热加载 `v0.1.0` → `v1.0.0`：旧修正备份并清空
+
+---
+
+## B7 · 多人场景主目标规则（P1）
+
+**问题**：MediaPipe 可能在一帧中检出多个人体骨架。当前代码默认取第一个检测结果，没有明确的多目标策略。
+
+**规范要求**：
+- 核心规则：**始终以画面中检测到的第一个正对相机、姿态最完整的人体为主目标**
+- 主目标选择算法：
+  1. 过滤：去除姿态置信度 < 0.5 的检测结果
+  2. 排序：按 `前方朝向得分`（身体正对相机程度）降序排列
+  3. 取排序结果的第一个作为主目标
+- 前方朝向得分的计算方式：
+  - 左右肩关键点 Y 坐标差值越小 → 越可能是正面朝向
+  - 鼻子 z 坐标（如果可用）越接近 0 → 越居中
+- 非主目标在 overlay 上以灰色虚线圈出，标注 "Secondary"
+
+**实现方式**：
+- `ws/handler.py` 或专用模块 `modules/multi_person.py` 实现 `select_primary_subject(results) -> Subject`
+- `overlay render` 根据 `Subject.role` 渲染不同颜色：
+  - Primary：绿色实线 + 穴位标签
+  - Secondary：灰色虚线，不标注穴位
+
+**验收标准**：
+- 画面中有 2 人（一人正面、一人侧面），穴位标注在正面的人身上
+- 画面中 1 人的姿态置信度 < 0.5，不做任何标注
+
+---
+
+## B8 · 热加载幂等性（P1）
+
+**问题**：`POST /api/acupoints/definitions/reload` 正在被调用期间，如果有 WebSocket 帧在并发处理中，`reload_definitions()` 会直接替换全局 `_current_definitions`，导致正在运行的帧推理函数读到半新半旧的数据。
+
+**规范要求**：
+- 热加载操作必须获取全局读-写锁，与帧处理互斥
+- 调用 `reload` 时：
+  - 新请求被排队等待
+  - 当前正在处理的帧完成后再替换定义
+  - 替换完成后，下一个被排队的请求使用新定义
+
+**实现方式**：
+- `session_service.py` 使用 `asyncio.Lock`：
+  ```python
+  _definitions_lock = asyncio.Lock()
+  
+  async def reload_definitions():
+      async with _definitions_lock:
+          # 原子替换
+          _current_definitions = load_acupoint_definitions()
+  
+  async def _process_frame(frame):
+      async with _definitions_lock:
+          definitions = _current_definitions  # 快照引用
+      # 后续使用 definitions 快照进行推理
+  ```
+
+**验收标准**：
+- 在帧处理密集期间（QPS > 5）连续调用 3 次 `/reload`，无 KeyError 或空数据异常
+
+---
+
+## B9 · 同身寸聚合策略（P1）
+
+**问题**：同一穴位有多种计算方法（骨度分寸法、手指同身寸法、体表标志法），当前代码对 `_get_kp` 的调用结果取均值，没有加权策略和兜底逻辑。
+
+**规范要求**：
+- 分级权重（从高到低）：
+  1. **骨度折量法**（权重 0.5）：基于实际骨骼长度测量，最精确
+  2. **体表标志法**（权重 0.3）：基于解剖标志（肚脐、乳头、肩峰等）
+  3. **手指同身寸法**（权重 0.2）：基于患者手指宽度推算，精度最低
+- 缺失数据的处理：
+  - 骨骼关键点不可见时，对应的测量方法跳过（不参与加权）
+  - 所有方法都不可用时，返回 `confidence: 0` + fallback 体位估计坐标
+
+**实现方式**：
+- `modules/cun_measurement.py` 中 `compute_acupoint_position` 函数实现三级加权
+- 返回结构包含每种方法的计算结果和最终加权结果：
+  ```python
+  {
+    "final_position": (x, y),
+    "confidence": 0.85,
+    "methods": {
+      "bone_proportional": {"position": ..., "confidence": 0.9, "weight": 0.5},
+      "body_landmark": {"position": ..., "confidence": 0.8, "weight": 0.3},
+      "finger_cun": None  # 此方法不可用
+    }
+  }
+  ```
+
+**验收标准**：
+- 三法全可用时，最终位置 ∈ 三种方法的 convex hull
+- 只有一种方法可用时，权重退化为 1.0
+
+---
+
+## B10 · 穴位格式校验（P1）
+
+**问题**：`acupoints_v0.1.json` 文件在热加载时没有 schema 校验，无效的 JSON 结构（缺失 `anchor`、坐标越界等）会导致运行时崩溃。
+
+**规范要求**：
+- 加载穴位定义时必须通过 Pydantic v2 的 `model_validate` 校验
+- 每个 `Acupoint` 的必填字段：
+  - `id`：穴位唯一标识，格式 `{meridian}_{name}`，如 `LU_zhongfu`
+  - `name_zh`：中文名
+  - `anchor`：相对于骨骼关键点的位置描述
+  - `meridian`：所属经络
+- 校验规则：
+  - `anchor` 不能为空字符串
+  - `side` 必须是 `"left"` / `"right"` / `"bilateral"` / `"central"` 之一
+  - `safety_level` 必须是 `"safe"` / `"caution"` / `"danger"` 之一
+
+**实现方式**：
+- `schemas/models.py` 中 `Acupoint` 定义完整字段 + validator：
+  ```python
+  from pydantic import field_validator
+  
+  class Acupoint(BaseModel):
+      id: str
+      name_zh: str
+      anchor: str
+      meridian: str
+      side: Literal["left", "right", "bilateral", "central"]
+      safety_level: Literal["safe", "caution", "danger"]
+      
+      @field_validator("anchor")
+      @classmethod
+      def anchor_not_empty(cls, v):
+          if not v.strip():
+              raise ValueError("anchor 不能为空")
+          return v
+  ```
+
+**验收标准**：
+- 加载有字段缺失的 JSON 时，FastAPI 返回 422 + 详细错误字段
+- 加载有效 JSON 正常，穴位数量 ≥ 1
+
+---
+
+## B11 · 浏览器兼容性（P2）
+
+**问题**：前端使用了 `getUserMedia`、`WebSocket`、`OffscreenCanvas`、`requestAnimationFrame` 等 API，没有声明最低浏览器版本要求。
+
+**规范要求**：
+- 目标浏览器最低版本：
+  - Chrome 90+
+  - Edge 90+
+  - Firefox 88+
+  - Safari 15+（iOS/macOS）
+- 不兼容时页面显示友好提示，列出不支持的特性：
+  - `getUserMedia` → "您的浏览器不支持摄像头访问"
+  - `WebSocket` → "您的浏览器不支持实时通信"
+  - `OffscreenCanvas` → 回退到 `createElement('canvas')`，性能下降提示
+
+**实现方式**：
+- `index.html` 增加 `<noscript>` 标签
+- `frontend/src/utils/browser-check.ts` 实现 `checkBrowserSupport()`：
+  ```typescript
+  export function checkBrowserSupport(): string[] {
+    const missing: string[] = [];
+    if (!navigator.mediaDevices?.getUserMedia) missing.push('getUserMedia');
+    if (!('WebSocket' in window)) missing.push('WebSocket');
+    if (!('OffscreenCanvas' in window)) missing.push('OffscreenCanvas');
+    return missing;
+  }
+  ```
+- 入口组件 `App.tsx` 的 `useEffect` 调用 `checkBrowserSupport()`，不兼容时渲染错误页
+
+**验收标准**：
+- IE 11 打开页面显示 "您的浏览器不受支持" + 缺少特性列表
+- Chrome 90+ 打开正常加载，无警告
+
+---
+
+## B12 · 版本兼容性矩阵（P2）
+
+**问题**：项目依赖 Python 3.10+、Node.js 16+、ultralytics 8.x、MediaPipe 0.10.x 等，但没有声明互操作版本矩阵。
+
+**规范要求**：
+- `pyproject.toml` / `requirements.txt` 必须锁定每个依赖的精确版本或兼容范围
+- 版本矩阵应在 README 和 `prompt.md` 中显式列出
+- 每次依赖升级后更新此矩阵
+
+**实现方式**：
+
+| 组件 | 最低版本 | 推荐版本 | 备注 |
+|---|---|---|---|
+| Python | 3.10 | 3.12+ | 3.9 及以下不支持 |
+| Node.js | 16 | 18+ | 16 已 EOL |
+| ultralytics | 8.0.0 | 8.2.x | 8.x 推荐 |
+| mediapipe | 0.10.0 | 0.10.9+ | 0.9.x 架构不兼容 |
+| FastAPI | 0.100.0 | 0.110+ | Pydantic v2 支持从 0.100 开始 |
+| Pydantic | 2.0 | 2.7+ | model_validator 从 2.0 开始 |
+| React | 18.0 | 18.3+ | Concurrent Mode 兼容 |
+| Zustand | 4.4 | 4.5+ | 无需额外 peer deps |
+
+**验收标准**：
+- 使用矩阵中最低版本组合，`npm install` + `pip install` 无冲突
+- 使用推荐版本组合，所有功能通过
+
+---
+
+## B13 · 坐标系归一化（P2）
+
+**问题**：MediaPipe 输出归一化坐标 (0~1)，YOLO 输出像素坐标，绘图时 `OverlayCanvas` 需要在两种坐标系间转换。当前转换逻辑分散在多处，容易出现比例错误。
+
+**规范要求**：
+- 内部统一使用**归一化坐标** (0~1)，以画面左上角为原点
+- 只有最终渲染 (OverlayCanvas) 时才转换为像素坐标
+- 定义明确的转换函数：
+  ```python
+  def norm_to_pixel(x: float, y: float, width: int, height: int) -> tuple[int, int]: ...
+  def pixel_to_norm(px: int, py: int, width: int, height: int) -> tuple[float, float]: ...
+  ```
+
+**实现方式**：
+- `modules/coordinate_utils.py` 提供归一化/像素转换工具
+- 所有内部计算（距离、比例、角度）使用归一化坐标
+- `acupoints_v0.1.json` 中 `anchor` 的描述使用归一化坐标参考
+
+**验收标准**：
+- 窗口缩放时（1920×1080 → 800×600），穴位标注位置准确缩放
+- 旋转画面后重新计算，穴位位置不离谱
+
+---
+
+## B14 · 导出格式标准（P2）
+
+**问题**：当前无数据导出功能，未来需要支持穴位标注结果的导出。但没有定义导出格式标准。
+
+**规范要求**：
+- 导出格式：JSON Schema 声明的结构化 JSON
+- 导出内容：
+  - `session_metadata`：时间戳、会话 ID、患者参数
+  - `acupoint_results`：穴位 ID → 坐标 → 置信度 → 修正记录
+  - `skeleton_data`：骨架关键点列表（可选）
+  - `raw_frames`：不导出（见 B3 隐私规范）
+- 文件名格式：`acupoint_session_{session_id}_{timestamp}.json`
+- 同时支持 CSV 简化版导出（穴位 ID, X, Y, 置信度）
+
+**实现方式**：
+- `schemas/export_schema.py` 定义 `SessionExport` Pydantic model
+- `GET /api/session/{session_id}/export?format=json` 和 `?format=csv` 端点
+- JSON export 附带 `$schema` 引用
+
+**验收标准**：
+- 导出 JSON 通过 JSON Schema 验证
+- CSV 用 Excel 打开不乱码（UTF-8 BOM）
+
+---
+
+## B15 · 离线降级行为（P2）
+
+**问题**：前端强依赖后端 WebSocket 连接，断网时页面直接无反应，没有任何离线提示或本地缓存。
+
+**规范要求**：
+- WebSocket 断开时：
+  - 摄像头继续工作（本地预览不中断）
+  - overlay 显示 "连接断开，正在重连..." 提示
+  - 穴位标注区域显示上次成功结果（灰度显示，标注 "(缓存)"）
+- 恢复连接后：
+  - overlay 提示消失
+  - 标注恢复实时更新
+
+**实现方式**：
+- `appStore.ts` 维护 `wsConnected: boolean` 和 `lastCachedResult: Result | null`
+- `OverlayCanvas` 根据 `wsConnected` 切换渲染模式：
+  - 在线：绿色标注 + 实时动画
+  - 离线：灰色标注 + 静态显示 + "重连中" 水印
+- 重连成功后 `lastCachedResult` 被新结果覆盖
+
+**验收标准**：
+- 拔网线后，摄像头画面不冻结，标注变灰
+- 插回网线后，标注在 3s 内恢复绿色实时更新
+
+---
+
+## B16 · 性能指标基线（P2）
+
+**问题**：没有定义性能基线，无法判断系统是否在正常范围内运行。
+
+**规范要求**：
+- MVP 阶段的性能基线（以 Chrome 90+ / Intel i5 / 8GB RAM / 1080p 摄像头为参考）：
+
+| 指标 | 目标值 | 告警阈值 |
+|---|---|---|
+| 帧处理延迟 (端到端) | < 200ms | > 500ms |
+| WebSocket 帧间隔 | 150~160ms | > 200ms 或 < 100ms |
+| YOLO 推理耗时 | < 80ms | > 150ms |
+| MediaPipe Hands 耗时 | < 30ms | > 60ms |
+| 前端渲染帧率 | ≥ 25 FPS | < 15 FPS |
+| 内存占用 (服务端) | < 500MB | > 1GB |
+| 内存占用 (前端 Tab) | < 200MB | > 400MB |
+
+**实现方式**：
+- 后端内置性能统计模块 `modules/perf_monitor.py`：
+  ```python
+  @dataclass
+  class FramePerf:
+      yolo_ms: float
+      mediapipe_ms: float
+      compute_ms: float
+      total_ms: float
+  
+  class PerfMonitor:
+      def record(self, perf: FramePerf): ...
+      def stats(self, window_seconds=30) -> PerfStats: ...
+  ```
+- 前端 `performance.now()` 测量帧往返时间
+- `/api/health` 端点包含近 30 秒的性能统计
+
+**验收标准**：
+- 所有指标在实际运行中可见（`/api/health` 返回真值）
+- 超过告警阈值时日志中输出 WARNING
+
+---
+
+## B17 · 穴位来源合规（P2）
+
+**问题**：穴位定义数据来源的法律合规性和引用归属未声明。
+
+**规范要求**：
+- `acupoints_v0.1.json` 或 README 中**必须**声明数据来源：
+  - 主要参考标准：《腧穴名称与定位》（GB/T 12346-2021）
+  - 坐标计算基于公开的人体骨骼解剖学数据
+  - 此项目输出为**穴位区域参考**，不是医疗诊断
+- 所有页面底部或侧边栏显示免责声明：
+  > ⚠️ 本系统仅供教学与研究参考，不构成医疗建议。实际针灸操作请咨询执业中医师。
+
+**实现方式**：
+- `acupoints_v0.1.json` 增加 `"_meta"` 字段：
+  ```json
+  {
+    "_meta": {
+      "source": "GB/T 12346-2021",
+      "purpose": "educational_reference",
+      "disclaimer": "不构成医疗建议"
+    },
+    "acupoints": [...]
+  }
+  ```
+- 前端 `Footer` 或 `InfoPanel` 组件渲染免责声明
+
+**验收标准**：
+- README 中有数据来源声明章节
+- 每个页面可见免责声明（非弹窗，为持久展示）
+
